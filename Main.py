@@ -7,86 +7,136 @@ clock = pygame.time.Clock()
 running = True
 dt = 0
 
-radius = 40
-velocity_y = 0            # Vitesse verticale initiale
-gravity = 0.5             # Gravité (accélération)
-floor = screen.get_height() - radius   	  # Limite du sol
-rebont = 0                # Compteur de rebond (temps passé dans l'air)
+# Classe pour les plateformes
+class Platform:
+    def __init__(self, x, y, width, height, color, colision, ressort):
+        self.rect = pygame.Rect(x, y, width, height)
+        self.color = color
+        self.colision = colision
+        self.ressort = ressort
 
-player_pos = pygame.Vector2(radius, floor)
+    def draw(self, screen):
+        pygame.draw.rect(screen, self.color, self.rect)
 
-# Fonction pour vérifier si le joueur est au sol
-def on_ground():
-    return player_pos.y >= floor
+    def is_player_above(self, player):
+        # Vérifie si le joueur est au-dessus de la plateforme (en tombant)
+        return (player.rect.bottom >= self.rect.top and
+                self.rect.left < player.rect.centerx < self.rect.right and
+                player.velocity_y > 0)
+    
+    def is_player_below(self, player):
+        # Vérifie si le joueur est en dessous de la plateforme (en sautant)
+        return (player.rect.top <= self.rect.bottom and
+                self.rect.left < player.rect.centerx < self.rect.right and
+                player.velocity_y < 0)
 
-# Fonction pour vérifier si le joueur est sur le rectangle bleu
-def on_blue_rectangle():
-    # Vérifie si le joueur est dans la zone du rectangle bleu
-    # et si sa vitesse verticale (velocity_y) est positive (ce qui signifie qu'il descend)
-    return (player_pos.y >= 500 - radius and 
-            screen.get_width() / 2 < player_pos.x < screen.get_width() / 2 + 200 and
-            velocity_y > 0)
+# Classe pour le joueur
+class Player:
+    def __init__(self, x, y, radius, color):
+        self.pos = pygame.Vector2(x, y)
+        self.radius = radius
+        self.color = color
+        self.velocity_y = 0 
+        self.gravity = 0.5
+        self.rebont = 0
+        self.on_ground = True  # Nouveau booléen pour indiquer si le joueur est au sol
+        self.rect = pygame.Rect(self.pos.x - radius, self.pos.y - radius, radius * 2, radius * 2)
+
+    def update(self, dt, floor, platforms):
+        # Mise à jour de la position et des collisions
+        keys = pygame.key.get_pressed()
+
+        # Déplacement horizontal
+        if keys[pygame.K_q] and self.rect.left > 0:
+            self.pos.x -= 300 * dt
+        if keys[pygame.K_d]and self.rect.right < screen.get_width():
+            self.pos.x += 300 * dt
+        if keys[pygame.K_r]:
+            self.pos.x = self.radius
+            self.velocity_y = 0
+            self.on_ground = True
+
+        # Saut
+        if keys[pygame.K_SPACE] and self.on_ground:
+            self.velocity_y = -20
+            self.on_ground = False
+
+        # Mise à jour de la position verticale
+        self.velocity_y += self.gravity
+        self.pos.y += self.velocity_y
+        self.on_ground = False
+
+        # Gestion des collisions avec le sol
+        if self.pos.y >= floor:
+            self.pos.y = floor
+            self.velocity_y = 0
+            self.on_ground = True
+            self.rebont = 0
+            for platform in platforms:
+                if self.pos.x > platform.rect.left and self.pos.x < platform.rect.right :
+                    self.pos.y = platform.rect.top - self.radius
 
 
-# Fonction pour vérifier si le joueur est sur le rectangle vert
-def on_green_rectangle():
-    return player_pos.y >= floor and screen.get_width() / 5 < player_pos.x < screen.get_width() / 5 + 700 / 3
+        # Gestion des collisions avec les plateformes
+        for platform in platforms:
+            if platform.colision:
+                # Vérification des collisions verticales
+                if self.rect.colliderect(platform.rect):
+                    if self.velocity_y > 0 and self.rect.bottom <= platform.rect.top + 10:
+                        # Collision en tombant
+                        self.pos.y = platform.rect.top - self.radius
+                        self.velocity_y = 0
+                        self.on_ground = True
+                    elif self.velocity_y < 0 and self.rect.top >= platform.rect.bottom - 10:
+                        # Collision en sautant
+                        self.pos.y = platform.rect.bottom + self.radius
+                        self.velocity_y = 0
+                
+                if self.rect.right > platform.rect.left - 10 and self.rect.left < platform.rect.left:
+                    # Collision côté gauche de la plateforme
+                    if not (self.rect.bottom <= platform.rect.top + 5 or self.rect.top >= platform.rect.bottom - 5):
+                        self.pos.x = platform.rect.left - self.radius
+                elif self.rect.left < platform.rect.right + 10 and self.rect.right > platform.rect.right:
+                    # Collision côté droit de la plateforme
+                    if not (self.rect.bottom <= platform.rect.top + 5 or self.rect.top >= platform.rect.bottom - 5):
+                        self.pos.x = platform.rect.right + self.radius 
+                 
 
+
+
+        # Mise à jour du rectangle de collision
+        self.rect.topleft = (self.pos.x - self.radius, self.pos.y - self.radius)
+
+    def draw(self, screen):
+        pygame.draw.circle(screen, self.color, (int(self.pos.x), int(self.pos.y)), self.radius)
+        pygame.draw.rect(screen, "white", self.rect, 2) 
+
+# Initialisation des objets
+floor = screen.get_height() - 40
+player = Player(100, floor, 40, "red")
+platforms = [
+    Platform(screen.get_width() / 2, 500, 200, 35, "blue", True, False),
+    Platform(screen.get_width() / 5, floor, 700 / 3, screen.get_height() / 3, "green", True, True),
+]
+
+# Boucle principale
 while running:
-    # poll for events
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
-    # Remplir l'écran avec une couleur
+    # Remplir l'écran
     screen.fill("black")
 
-    pygame.draw.circle(screen, "red", player_pos, radius)
-    pygame.draw.rect(screen, "blue", (screen.get_width() / 2, 500, 200, 35))
-    pygame.draw.rect(screen, "green", (screen.get_width() / 5, floor, 700 / 3, screen.get_height() / 3))
+    # Mise à jour et affichage du joueur
+    player.update(dt, floor, platforms)
+    player.draw(screen)
 
-    # Déplacements gauche/droite
-    keys = pygame.key.get_pressed()
-    if keys[pygame.K_q]:
-        player_pos.x -= 300 * dt
-    if keys[pygame.K_d]:
-        player_pos.x += 300 * dt
+    # Affichage des plateformes
+    for platform in platforms:
+        platform.draw(screen)
 
-    # Saut si le joueur est au sol
-    if keys[pygame.K_SPACE] and player_pos.y == floor or (keys[pygame.K_SPACE] and player_pos.y >= 600 - radius and screen.get_width() / 2 < player_pos.x < screen.get_width() / 2 + 200):
-        velocity_y = -15  # Vitesse initiale pour le saut
-        player_pos.y += velocity_y
-        rebont = 1  # Démarre le compteur de rebond lorsqu'on saute
-
-    # Appliquer la gravité
-    if player_pos.y < floor:
-        velocity_y += gravity
-        player_pos.y += velocity_y
-        rebont += dt  # Augmente rebont pendant que le joueur est en l'air
-
-    # Si le joueur est au sol
-    if on_ground():
-        player_pos.y = floor
-        # Calcul de la puissance du rebond en fonction du temps passé en l'air
-        rebond_power = min(rebont * 10, 30)  # Facteur limitant pour éviter des rebonds trop puissants
-        velocity_y = -rebond_power  # Applique le rebond
-        rebont = 0  # Réinitialiser le compteur de rebond
-
-    # Si le joueur est sur le rectangle bleu
-    if on_blue_rectangle():  
-        player_pos.y = 500 - radius
-        velocity_y = 0
-        rebont = 0
-
-    # Si le joueur est sur le rectangle vert, il rebondit comme un ressort
-    if on_green_rectangle():
-        print(rebont, rebond_power)
-        rebond_power = min(rebont * 10, 30)  # Applique la même logique pour le rebond
-        velocity_y = -rebond_power  # Applique la puissance du rebond
-        player_pos.y = floor  # Assurez-vous que le joueur ne dépasse pas la surface du sol
-        player_pos.x += 1000 * dt  # Vous pouvez ajouter un petit déplacement horizontal
-
-    # Afficher
+    # Rafraîchir l'écran
     pygame.display.flip()
 
     # Limiter les FPS à 60
